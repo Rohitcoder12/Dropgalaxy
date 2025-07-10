@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from downloader import get_dropgalaxy_link
 import os
 import telegram
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, filters  # Corrected import
 import logging
 
 app = Flask(__name__)
@@ -94,7 +94,7 @@ if __name__ == '__main__':
     # Register handlers
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("download", download_handler))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, echo))
+    dp.add_handler(MessageHandler(filters.text & ~filters.command, echo))  # Corrected import
     dp.add_error_handler(error)
 
     # Start the bot
