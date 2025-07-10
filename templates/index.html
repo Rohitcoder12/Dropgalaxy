@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DropGalaxy Downloader</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
+        input[type="url"] { width: 95%; padding: 10px; margin-bottom: 10px; }
+        input[type="submit"] { padding: 10px 20px; background-color: #007bff; color: white; border: none; cursor: pointer; }
+        .flash { padding: 15px; margin-bottom: 20px; border: 1px solid transparent; border-radius: 4px; color: #a94442; background-color: #f2dede; border-color: #ebccd1; }
+    </style>
+</head>
+<body>
+    <h1>DropGalaxy Downloader Bot</h1>
+    <p>Paste the DropGalaxy (dgdrive.site) link below and click "Get Download Link".</p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash">
+          {% for message in messages %}
+            <p>{{ message }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST">
+        <input type="url" name="url" placeholder="https://dgdrive.site/xxxxxxxxx" required>
+        <br>
+        <input type="submit" value="Get Download Link">
+    </form>
+</body>
+</html>
