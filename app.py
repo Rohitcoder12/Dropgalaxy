@@ -1,103 +1,116 @@
-from flask import Flask, request, jsonify
-from downloader import get_dropgalaxy_link
 import os
-import telegram
-from telegram.ext import Updater, CommandHandler, MessageHandler, filters  # Corrected import
 import logging
+import requests
+import telegram
+from flask import Flask, request, jsonify
+from telegram.ext import (
+    Updater,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    Dispatcher
+)
+from downloader import get_dropgalaxy_link
 
-app = Flask(__name__)
-
-# Telegram Bot Token (from environment variable)
-TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
-
+# --- Basic Setup ---
 # Enable logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.INFO)
-
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-# --- Telegram Bot Handlers ---
+# Get environment variables
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+APP_URL = os.environ.get("RENDER_EXTERNAL_URL") # Render provides this automatically
 
-def start(update, context):
+if not TOKEN:
+    raise ValueError("No TELEGRAM_BOT_TOKEN found in environment variables")
+if not APP_URL:
+    raise ValueError("No RENDER_EXTERNAL_URL found. Please set this in Render's environment.")
+
+
+# --- Telegram Bot Handler Functions ---
+
+def start(update: telegram.Update, context: telegram.ext.CallbackContext):
     """Sends a help message when the /start command is issued."""
-    update.message.reply_text('Hi! Send me a DropGalaxy link to download the file.')
+    update.message.reply_text("Hi! Send me a DropGalaxy link and I will try to download the file for you.")
 
-def download_handler(update, context):
-    """Handles the /download command and downloads the file."""
-    try:
-        dropgalaxy_url = update.message.text.replace('/download ', '')  # Extract URL
-        if not dropgalaxy_url:
-            update.message.reply_text("Please provide a DropGalaxy link after the /download command.")
-            return
+def handle_message(update: telegram.Update, context: telegram.ext.CallbackContext):
+    """Handles any message that contains a potential DropGalaxy link."""
+    url = update.message.text
+    if 'dgdrive.site' in url or 'dropgalaxy' in url:
+        message = update.message.reply_text("🔗 Link detected. Processing, please wait...")
 
-        final_link, error = get_dropgalaxy_link(dropgalaxy_url)
+        # Get the direct link
+        final_link, error = get_dropgalaxy_link(url)
 
         if error:
-            update.message.reply_text(f"Error: {error}")
+            message.edit_text(f"❌ Error: {error}")
             return
 
         if final_link:
-            update.message.reply_text(f"Downloading from: {final_link}")
-            # Download the file and send it to the user
-            download_file_and_send(final_link, update.message.chat_id, context)
+            message.edit_text(f"✅ Success! Found direct link. Now downloading and uploading to Telegram. This may take a while...")
+            # Download the file from the direct link and send it to the user
+            download_file_and_send(final_link, update.message.chat_id, context, message)
         else:
-            update.message.reply_text("Could not find the download link.")
+            message.edit_text("Could not find the final download link. The site may have changed.")
+    else:
+        update.message.reply_text("Please send a valid DropGalaxy link.")
 
-    except Exception as e:
-        logger.exception(f"An error occurred: {e}")
-        update.message.reply_text("An unexpected error occurred. Please try again later.")
 
-def download_file_and_send(url, chat_id, context):
-    """Downloads a file from a URL and sends it to a Telegram chat."""
-    import requests
+def download_file_and_send(url: str, chat_id: int, context: telegram.ext.CallbackContext, status_message: telegram.Message):
+    """Downloads a file and sends it as a document to Telegram."""
     try:
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
+        with requests.get(url, stream=True) as r:
+            r.raise_for_status()
+            # Try to get the filename from headers, otherwise guess from URL
+            if 'content-disposition' in r.headers:
+                filename = re.findall("filename=\"(.+)\"", r.headers['content-disposition'])[0]
+            else:
+                filename = url.split('/')[-1]
 
-        filename = url.split('/')[-1]
-        
-        # Send the file to Telegram
-        context.bot.send_document(chat_id=chat_id, document=response.content, filename=filename)
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error downloading file: {e}")
-        context.bot.send_message(chat_id=chat_id, text=f"Error downloading file: {e}")
+            status_message.edit_text(f"Uploading '{filename}' to Telegram...")
+            context.bot.send_document(chat_id=chat_id, document=r.content, filename=filename, timeout=50)
+        status_message.delete() # Clean up the status message after sending the file
     except Exception as e:
-        logger.exception(f"An error occurred while sending the file: {e}")
-        context.bot.send_message(chat_id=chat_id, text="An error occurred while sending the file.")
+        logger.error(f"Failed to download or send file: {e}")
+        status_message.edit_text(f"❌ An error occurred while sending the file: {e}")
 
-def echo(update, context):
-    """Echoes the user's message."""
-    update.message.reply_text(update.message.text)
 
-def error(update, context):
-    """Log Errors caused by Updates."""
-    logger.warning('Update "%s" caused error "%s"', update, context.error)
+# --- Flask App and Bot Initialization ---
 
-# --- Flask Routes ---
+# Initialize Flask app
+app = Flask(__name__)
 
-@app.route('/', methods=['POST'])
-def telegram_webhook():
-    """Handles Telegram webhook requests."""
-    # Get the update from the request
+# Initialize Bot and Dispatcher
+bot = telegram.Bot(token=TOKEN)
+dispatcher = Dispatcher(bot, None, workers=4, use_context=True)
+
+# Register handlers with the dispatcher
+dispatcher.add_handler(CommandHandler("start", start))
+dispatcher.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+# This is the single webhook route that Telegram will call
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook_handler():
+    """Handles webhook requests from Telegram."""
     update = telegram.Update.de_json(request.get_json(force=True), bot)
-
-    # Dispatch the update to the handler
     dispatcher.process_update(update)
-    return jsonify({'status': 'OK'})
+    return "ok"
 
-if __name__ == '__main__':
-    # --- Telegram Bot Setup ---
-    updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
+# This route is used to set the webhook
+@app.route("/set_webhook", methods=['GET', 'POST'])
+def setup_webhook():
+    """Sets the webhook on Telegram to point to this app."""
+    webhook_url = f"{APP_URL}/{TOKEN}"
+    success = bot.set_webhook(webhook_url)
+    if success:
+        return f"Webhook set to {webhook_url}"
+    else:
+        return "Webhook setup failed."
 
-    # Register handlers
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("download", download_handler))
-    dp.add_handler(MessageHandler(filters.text & ~filters.command, echo))  # Corrected import
-    dp.add_error_handler(error)
-
-    # Start the bot
-    updater.start_webhook(listen="0.0.0.0", port=int(os.environ.get('PORT', 5000)), webhook_url=f"YOUR_RENDER_APP_URL/{TELEGRAM_BOT_TOKEN}")
-    # Start the Flask app
-    app.run(debug=True)
+# This is a health check route for Render
+@app.route("/")
+def index():
+    """A simple health check page."""
+    return "Hello! I am the DropGalaxy downloader bot. I am alive!"
