@@ -1,5 +1,5 @@
 requests
 beautifulsoup4
-Flask
+Flask[async]
 gunicorn
 python-telegram-bot
