@@ -21,12 +21,12 @@ def get_dropgalaxy_link(url):
 
         # Step 2: Submit "Free Download" form
         form_data = {inp.get('name'): inp.get('value') for inp in soup.find_all('input', {'type': 'hidden'})}
-        form_data['method_free'] = 'Free Download' 
-        time.sleep(3) 
+        form_data['method_free'] = 'Free Download'
+        time.sleep(3)
         second_page_response = client.post(url, data=form_data, timeout=15)
         second_page_response.raise_for_status()
         soup = BeautifulSoup(second_page_response.text, 'html.parser')
-        
+
         if soup.find('div', class_='g-recaptcha'):
             return None, "CAPTCHA detected. Cannot proceed."
 
@@ -37,7 +37,7 @@ def get_dropgalaxy_link(url):
         create_link_button = soup.find('button', {'type': 'submit'})
         if not create_link_button:
             return None, "Could not find 'Create Download Link' button."
-        
+
         form_data_2[create_link_button.get('name')] = create_link_button.get('value', '')
         final_page_response = client.post(url, data=form_data_2, timeout=15)
         final_page_response.raise_for_status()
