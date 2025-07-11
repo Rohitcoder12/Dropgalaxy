@@ -106,12 +106,15 @@ app = Flask(__name__)
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 async def webhook_handler():
+    """Parses the request and handles the update."""
     logger.info("Webhook received!")
     update = telegram.Update.de_json(request.get_json(force=True), application.bot)
-    await application.process_update(update)
+    # The key fix is to use the update_queue for webhook integration
+    await application.update_queue.put(update)
     logger.info("Webhook processing finished.")
     return "ok"
 
 @app.route("/")
 def index():
+    """A simple health check page that you can visit in your browser."""
     return "Hello! I am the DropGalaxy downloader bot. I am alive!"
