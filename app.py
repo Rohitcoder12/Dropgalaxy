@@ -1,6 +1,5 @@
 import os
 import logging
-import asyncio
 import requests
 import re
 import telegram
@@ -17,6 +16,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     raise ValueError("No TELEGRAM_BOT_TOKEN found in environment variables")
+
 
 # --- Core Logic ---
 # (No changes needed in this part)
@@ -65,8 +65,7 @@ async def plain_message_handler(update: telegram.Update, context: ContextTypes.D
     else:
         await update.message.reply_text("This does not look like a DropGalaxy link.")
 
-# --- The CRITICAL FIX IS HERE ---
-
+# --- Flask App and Bot Initialization ---
 # Create the Application object
 application = Application.builder().token(TOKEN).build()
 
@@ -75,16 +74,14 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("download", download_command_handler))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_message_handler))
 
-# Run the bot in a separate thread
-asyncio.create_task(application.run_polling())
-
 # Initialize Flask app
 app = Flask(__name__)
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 async def webhook_handler():
-    # This now just confirms the webhook is being called
-    logger.info("Webhook received!")
+    """Handles webhook requests from Telegram."""
+    update = telegram.Update.de_json(request.get_json(force=True), application.bot)
+    await application.process_update(update)
     return "ok"
 
 @app.route("/")
