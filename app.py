@@ -36,11 +36,13 @@ async def process_url(url: str, update: telegram.Update, context: ContextTypes.D
     # Instead of downloading, we send the link back to the user.
     if final_link:
         # Prepare a nice-looking message with a clickable link
+        # Note: We escape characters for MarkdownV2
+        escaped_link = final_link.replace('.', r'\.').replace('-', r'\-').replace('(', r'\(').replace(')', r'\)')
         reply_text = (
-            f"✅ **Success!**\n\n"
-            f"I have found the direct download link for you.\n\n"
-            f"➡️ [Click Here to Download]({final_link})\n\n"
-            f"_(This link will start the download in your browser.)_"
+            f"✅ *Success\\!* \n\n"
+            f"I have found the direct download link for you\\.\n\n"
+            f"➡️ [Click Here to Download]({escaped_link})\n\n"
+            f"_(This link will start the download in your browser\\.)_"
         )
         # Use MarkdownV2 for formatting
         await message.edit_text(
