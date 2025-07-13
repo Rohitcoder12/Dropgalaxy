@@ -18,68 +18,72 @@ if not TOKEN:
     raise ValueError("No TELEGRAM_BOT_TOKEN found in environment variables")
 
 
-# --- Core Logic ---
-# (No changes needed in this part)
+# --- Core Logic Function ---
+
 async def process_url(url: str, update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
+    """The main function to process a URL and send the direct link back."""
+    message = await update.message.reply_text("🔗 Link detected. Navigating the website, please wait...")
+
+    # Get the direct link
     from downloader import get_dropgalaxy_link
-    message = await update.message.reply_text("🔗 Link detected. Processing, please wait...")
     final_link, error = get_dropgalaxy_link(url)
+
     if error:
         await message.edit_text(f"❌ Error: {error}")
         return
+
+    # *** THIS IS THE KEY CHANGE ***
+    # Instead of downloading, we send the link back to the user.
     if final_link:
-        await message.edit_text(f"✅ Success! Found direct link. Now downloading...")
-        await download_file_and_send(final_link, update.message.chat_id, context, message)
+        # Prepare a nice-looking message with a clickable link
+        reply_text = (
+            f"✅ **Success!**\n\n"
+            f"I have found the direct download link for you.\n\n"
+            f"➡️ [Click Here to Download]({final_link})\n\n"
+            f"_(This link will start the download in your browser.)_"
+        )
+        # Use MarkdownV2 for formatting
+        await message.edit_text(
+            text=reply_text,
+            parse_mode=telegram.constants.ParseMode.MARKDOWN_V2,
+            disable_web_page_preview=True
+        )
     else:
-        await message.edit_text("Could not find the final download link.")
+        await message.edit_text("Could not find the final download link. The site may have changed.")
 
-async def download_file_and_send(url: str, chat_id: int, context: ContextTypes.DEFAULT_TYPE, status_message: telegram.Message):
-    try:
-        with requests.get(url, stream=True, timeout=60) as r:
-            r.raise_for_status()
-            filename = url.split('/')[-1] or "downloaded_file"
-            if 'content-disposition' in r.headers:
-                fn = re.findall("filename=\"(.+)\"", r.headers['content-disposition'])
-                if fn:
-                    filename = fn[0]
-            await status_message.edit_text(f"Uploading '{filename}' to Telegram...")
-            await context.bot.send_document(chat_id=chat_id, document=r.content, filename=filename, read_timeout=120, write_timeout=120)
-        await status_message.delete()
-    except Exception as e:
-        logger.error(f"CRASH in download_file_and_send: {e}", exc_info=True)
-        await status_message.edit_text(f"❌ An error occurred while sending the file: {e}")
 
-# --- Handlers ---
+# --- Handlers (No changes needed, but included for completeness) ---
+
 async def start(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hi! Send me a DropGalaxy link (or use /download <link>).")
+    """Sends a welcome message."""
+    await update.message.reply_text("Hi! Send me a DropGalaxy link (or use /download <link>) and I will get the direct download link for you.")
 
 async def download_command_handler(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the /download command."""
     if not context.args:
         await update.message.reply_text("Please provide a URL after the /download command.")
         return
     await process_url(context.args[0], update, context)
 
 async def plain_message_handler(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles plain text messages containing a link."""
     if update.message and update.message.text and ('dgdrive.site' in update.message.text or 'dropgalaxy' in update.message.text):
         await process_url(update.message.text, update, context)
     else:
         await update.message.reply_text("This does not look like a DropGalaxy link.")
 
-# --- Flask App and Bot Initialization ---
-# Create the Application object
+
+# --- Flask App and Bot Initialization (No changes needed) ---
 application = Application.builder().token(TOKEN).build()
 
-# Add all the handlers
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("download", download_command_handler))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_message_handler))
 
-# Initialize Flask app
 app = Flask(__name__)
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 async def webhook_handler():
-    """Handles webhook requests from Telegram."""
     update = telegram.Update.de_json(request.get_json(force=True), application.bot)
     await application.process_update(update)
     return "ok"
